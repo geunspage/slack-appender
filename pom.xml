@@ -4,7 +4,7 @@
 
 	<groupId>kr.geun.logback</groupId>
 	<artifactId>slack-appender</artifactId>
-	<version>0.0.1</version>
+	<version>0.0.1-SNAPSHOT</version>
 	<packaging>jar</packaging>
 
 	<name>slack-appender</name>
@@ -16,12 +16,12 @@
 	</properties>
 
 	<licenses>
-        <license>
-            <name>pache-2.0</name>
-            <url>https://opensource.org/licenses/Apache-2.0</url>
-            <distribution>repo</distribution>
-        </license>
-    </licenses>
+		<license>
+			<name>apache-2.0</name>
+			<url>https://opensource.org/licenses/Apache-2.0</url>
+			<distribution>repo</distribution>
+		</license>
+	</licenses>
 
 	<dependencies>
 		<dependency>

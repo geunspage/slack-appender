@@ -26,8 +26,7 @@ import ch.qos.logback.core.status.ErrorStatus;
 public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
 	private final int TIME_OUT = 3000;
-	private final String WEBHOOK_BASIC_URL = "https://hooks.slack.com/services/%s";
-	private String webhook_token;
+	private String webhook_url;
 	private String channel;
 	private Level noti_level;
 	private Layout<ILoggingEvent> layout;
@@ -49,7 +48,7 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 	public void start() {
 		int error_cnt = 0;
 
-		if (webhook_token == null) {
+		if (webhook_url == null) {
 			addStatus(new ErrorStatus("Requirement webhook_token, You have to set for the appdener named \"" + name + "\".", this));
 			error_cnt++;
 		}
@@ -75,7 +74,7 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
 	@Override
 	protected void append(ILoggingEvent eventObject) {
-		if (isStarted() == false) { //
+		if (isStarted() == false) { 
 			return;
 		}
 
@@ -125,7 +124,7 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 	 * @throws Exception
 	 */
 	private void requestPost(byte[] param) throws Exception {
-		URL url = new URL(String.format(WEBHOOK_BASIC_URL, webhook_token));
+		URL url = new URL(webhook_url);
 		//TODO : reuse
 		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
 		conn.setConnectTimeout(TIME_OUT);
@@ -192,8 +191,8 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 
 	/*Setter Methods*/
 
-	public void setWebhook_token(String webhook_token) {
-		this.webhook_token = webhook_token;
+	public void setWebhook_url(String webhook_url) {
+		this.webhook_url = webhook_url;
 	}
 
 	public void setNoti_level(Level noti_level) {
