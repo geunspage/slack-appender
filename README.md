@@ -1,5 +1,4 @@
 # slack-appender
------------
 * Logback appdender to use Slack Message.
 
 ##### Maven
