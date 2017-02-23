@@ -19,7 +19,7 @@
 #### How to Use
 * logback.xml
 
-		<?xml version="1.0" encoding="UTF-8" ?>
+	 <?xml version="1.0" encoding="UTF-8" ?>
 	<configuration scan="true" scanPeriod="30 seconds">
 	
 		<appender name="SLACK" class="kr.geun.logback.appender.SlackAppender">
