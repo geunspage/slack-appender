@@ -7,8 +7,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Queue;
+import java.util.concurrent.locks.ReentrantLock;
 
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
@@ -24,25 +28,20 @@ import ch.qos.logback.core.status.ErrorStatus;
  *
  */
 public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
-
+	
+	private final long SEND_INTERVAL = 5000; // 5 sec
 	private final int TIME_OUT = 3000;
-	private String webhook_url;
-	private String channel;
-	private Level noti_level;
-	private Layout<ILoggingEvent> layout;
-
-	private long lastSentTimestamp = 0;
-	private final long sendInterval = 5000; // 5 sec
-
+	private Queue<ILoggingEvent> LINKED_QUE = new LinkedList<ILoggingEvent>();
+	private final int MAX_SEND_SIZE = 30;
+	private long LAST_SENT_TIMESTAMP = 0;
+	private static boolean IS_SEC_THREAD_RUN = false;
+	protected final ReentrantLock LOCK = new ReentrantLock(true);
 	private static Map<Level, String> LEVEL_COLOR = new HashMap<Level, String>();
 
-	static {
-		LEVEL_COLOR.put(Level.TRACE, "#8C8C8C");
-		LEVEL_COLOR.put(Level.DEBUG, "#B2EBF4");
-		LEVEL_COLOR.put(Level.INFO, "#0100FF");
-		LEVEL_COLOR.put(Level.WARN, "#FF5E00");
-		LEVEL_COLOR.put(Level.ERROR, "#FF0000");
-	}
+	private String webhook_url; /* required */
+	private String channel; /* required */
+	private Level noti_level; /* required */
+	private Layout<ILoggingEvent> layout; /* required */
 
 	@Override
 	public void start() {
@@ -68,39 +67,51 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 			error_cnt++;
 		}
 		if (error_cnt == 0) {
+			setLevelColor();
 			super.start(); //Slack Appender start
 		}
 	}
 
+	/**
+	 * Setting Level Color
+	 */
+	private void setLevelColor() {
+		LEVEL_COLOR.put(Level.TRACE, "#8C8C8C");
+		LEVEL_COLOR.put(Level.DEBUG, "#B2EBF4");
+		LEVEL_COLOR.put(Level.INFO, "#0100FF");
+		LEVEL_COLOR.put(Level.WARN, "#FF5E00");
+		LEVEL_COLOR.put(Level.ERROR, "#FF0000");
+	}
+
 	@Override
 	protected void append(ILoggingEvent eventObject) {
-		if (isStarted() == false) { 
+		if (isStarted() == false) {
 			return;
 		}
 
+		LOCK.lock();
 		try {
 			if (eventObject.getLevel().isGreaterOrEqual(noti_level)) {
 				long now = System.currentTimeMillis();
-
-				if (lastSentTimestamp == 0 || (lastSentTimestamp + sendInterval < now)) {
-
-					Map<String, String> param = new LinkedHashMap<String, String>();
-					param.put("pretext", getPretext(eventObject));
-					param.put("text", layout.doLayout(eventObject));
-					param.put("channel", channel);
-					param.put("color", LEVEL_COLOR.get(eventObject.getLevel()));
-
-					requestPost(toJsonString(param).getBytes(StandardCharsets.UTF_8));
+				if (LAST_SENT_TIMESTAMP == 0 || (LAST_SENT_TIMESTAMP + SEND_INTERVAL < now)) {
+					new Thread(new SenderRunner(eventObject)).start();
 
 				} else {
-					//TODO : add Queue
+					LINKED_QUE.offer(eventObject);
+					if (IS_SEC_THREAD_RUN == false) {
+						IS_SEC_THREAD_RUN = true;
+						new Thread(new MultiSenderRunner()).start();
+					}
+
 				}
+
+				LAST_SENT_TIMESTAMP = now;
 			}
 		} catch (Exception e) {
 			addError("Slack Appender Exception", e);
 			e.printStackTrace(System.err);
 		} finally {
-
+			LOCK.unlock();
 		}
 	}
 
@@ -125,7 +136,6 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 	 */
 	private void requestPost(byte[] param) throws Exception {
 		URL url = new URL(webhook_url);
-		//TODO : reuse
 		HttpURLConnection conn = (HttpURLConnection)url.openConnection();
 		conn.setConnectTimeout(TIME_OUT);
 		conn.setReadTimeout(TIME_OUT);
@@ -179,6 +189,34 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 	}
 
 	/**
+	 * Convert List to Json Array
+	 *  - Slack Api Format
+	 * 
+	 * @param list
+	 * @return
+	 */
+	private String toJsonArray(List<String> list) {
+		StringBuffer rtnSb = new StringBuffer("");
+		if (list == null) {
+			return rtnSb.toString();
+		}
+
+		boolean firstKey = true;
+		rtnSb.append("{\"attachments\":[");
+		for (String str : list) {
+			if (firstKey) {
+				firstKey = false;
+			} else {
+				rtnSb.append(",");
+			}
+			rtnSb.append(str);
+		}
+
+		rtnSb.append("]}");
+		return rtnSb.toString();
+	}
+
+	/**
 	 * String in double quotation marks. 
 	 * 
 	 * @param str
@@ -187,6 +225,93 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 	private String quoteStr(String str) {
 		final String DOUBLE_QUOTE = "\"";
 		return DOUBLE_QUOTE + str + DOUBLE_QUOTE;
+	}
+
+	/**
+	 * Send message 
+	 * 
+	 * @param eventObject
+	 * @return
+	 */
+	private String makeSendText(ILoggingEvent eventObject) {
+		Map<String, String> param = new LinkedHashMap<String, String>();
+		param.put("pretext", getPretext(eventObject));
+		param.put("text", layout.doLayout(eventObject));
+		param.put("channel", channel);
+		param.put("color", LEVEL_COLOR.get(eventObject.getLevel()));
+
+		return toJsonString(param);
+	}
+
+	/**
+	 * Single Sender
+	 * 
+	 * @author geunspage
+	 *
+	 */
+	private class SenderRunner implements Runnable {
+		private ILoggingEvent eventObject;
+
+		private SenderRunner(ILoggingEvent eventObject) {
+			this.eventObject = eventObject;
+		}
+
+		@Override
+		public void run() {
+			try {
+				requestPost(makeSendText(eventObject).getBytes(StandardCharsets.UTF_8));
+
+			} catch (Exception e) {
+				addError("Slack Appender Exception", e);
+				e.printStackTrace(System.err);
+			}
+		}
+	}
+
+	/**
+	 * MultiSender
+	 * 
+	 * @author geunspage
+	 *
+	 */
+	private class MultiSenderRunner implements Runnable {
+
+		@Override
+		public void run() {
+			try {
+				Thread.sleep(SEND_INTERVAL);
+				if (LINKED_QUE.isEmpty()) {
+					return;
+				}
+
+				int current_send_cnt = 0;
+				List<String> sendList = new LinkedList<String>();
+
+				while (LINKED_QUE.isEmpty() == false) {
+					sendList.add(makeSendText(LINKED_QUE.poll()));
+					current_send_cnt++;
+
+					if (MAX_SEND_SIZE == current_send_cnt) {
+						requestPost(toJsonArray(sendList).getBytes(StandardCharsets.UTF_8));
+						sendList.clear();
+						current_send_cnt = 0;
+						Thread.sleep(500L);
+					}
+				}
+
+				if (sendList.isEmpty() == false) {
+					requestPost(toJsonArray(sendList).getBytes(StandardCharsets.UTF_8));
+					sendList.clear();
+				}
+
+			} catch (Exception e) {
+				addError("Slack Appender Exception", e);
+				e.printStackTrace(System.err);
+			} finally {
+				IS_SEC_THREAD_RUN = false;
+			}
+		}
+
 	}
 
 	/*Setter Methods*/
