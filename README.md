@@ -5,7 +5,7 @@
     <dependency>
             <groupId>kr.geun.logback</groupId>
             <artifactId>slack-appender</artifactId>
-            <version>0.0.1</version>
+            <version>0.0.3</version>
     </dependency>
 
 #### Require Parameters
