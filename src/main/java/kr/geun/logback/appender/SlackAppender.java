@@ -28,7 +28,7 @@ import ch.qos.logback.core.status.ErrorStatus;
  *
  */
 public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
-	
+
 	private final long SEND_INTERVAL = 5000; // 5 sec
 	private final int TIME_OUT = 3000;
 	private Queue<ILoggingEvent> LINKED_QUE = new LinkedList<ILoggingEvent>();
@@ -179,9 +179,9 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 			}
 
 			Entry<String, String> entry = iter.next();
-			rtnSb.append(quoteStr(entry.getKey()));
+			rtnSb.append(coverQuoteStr(entry.getKey()));
 			rtnSb.append(":");
-			rtnSb.append(quoteStr(entry.getValue()));
+			rtnSb.append(coverQuoteStr(entry.getValue()));
 		}
 		rtnSb.append("}");
 
@@ -222,9 +222,23 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 	 * @param str
 	 * @return
 	 */
-	private String quoteStr(String str) {
+	private String coverQuoteStr(String str) {
 		final String DOUBLE_QUOTE = "\"";
 		return DOUBLE_QUOTE + str + DOUBLE_QUOTE;
+	}
+
+	/**
+	 * replace str
+	 *  - " -> \" 
+	 * 
+	 * @param str
+	 * @return
+	 */
+	private String replaceQuoteStr(String str) {
+		if (str == null) {
+			return "";
+		}
+		return str.replace("\"", "\\\"");
 	}
 
 	/**
@@ -235,8 +249,8 @@ public class SlackAppender extends UnsynchronizedAppenderBase<ILoggingEvent> {
 	 */
 	private String makeSendText(ILoggingEvent eventObject) {
 		Map<String, String> param = new LinkedHashMap<String, String>();
-		param.put("pretext", getPretext(eventObject));
-		param.put("text", layout.doLayout(eventObject));
+		param.put("pretext", replaceQuoteStr(getPretext(eventObject)));
+		param.put("text", replaceQuoteStr(layout.doLayout(eventObject)));
 		param.put("channel", channel);
 		param.put("color", LEVEL_COLOR.get(eventObject.getLevel()));
 
